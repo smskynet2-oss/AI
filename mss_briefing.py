@@ -1,7 +1,8 @@
-"""중기부 조간 기사 목록을 원본 매크로 양식의 TXT로 변환."""
+"""중기부 조간 기사 목록을 원본 매크로 순서를 유지하면서 링크가 있는 HTML로 변환."""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+from html import escape
 from io import BytesIO
 from urllib.parse import urlsplit
 
@@ -18,7 +19,7 @@ def _cell(value):
 def _http_url(value):
     if isinstance(value, tuple):
         displayed, target = value
-        return _http_url(displayed) or _http_url(target)
+        return _http_url(target) or _http_url(displayed)
     value = _cell(value)
     if not value or any(c.isspace() for c in value):
         return ""
@@ -57,8 +58,8 @@ def row_is_section(row):
     return bool(row and _cell(row[0]) and (len(row) < 2 or not _cell(row[1])))
 
 
-def format_workbook(data: bytes, filename: str, report_date: date | None = None):
-    """TXT와 포함된 기사 수를 반환합니다. 매크로를 실행하지 않습니다."""
+def _read_report(data: bytes, filename: str, report_date: date | None = None):
+    """보고서 제목과 소제목·기사 목록을 읽습니다. 매크로는 실행하지 않습니다."""
     ext = filename.rsplit(".", 1)[-1].lower()
     if ext in {"xlsx", "xlsm"}:
         from openpyxl import load_workbook
@@ -87,7 +88,8 @@ def format_workbook(data: bytes, filename: str, report_date: date | None = None)
     rows, columns = _find_layout(sheets)
     report_date = report_date or datetime.now(KST).date()
     day = "월화수목금토일"[report_date.weekday()]
-    lines = [f"< '{report_date:%y}.{report_date.month}.{report_date.day}({day}), 조간 주요 보도 >", "", ""]
+    heading = f"< '{report_date:%y}.{report_date.month}.{report_date.day}({day}), 조간 주요 보도 >"
+    entries = []
     count = 0
     for row in rows:
         title, press, original, naver = (row[i] if i is not None and i < len(row) else None for i in columns)
@@ -95,12 +97,55 @@ def format_workbook(data: bytes, filename: str, report_date: date | None = None)
         if not title:
             continue
         if not press:
-            if len(lines) > 3:
-                lines.append("")
-            lines.extend([title, ""])
+            entries.append((title, "", ""))
             continue
-        lines.extend([f"ㅇ {press}, {title}", _http_url(naver) or _http_url(original), ""])
+        entries.append((title, press, _http_url(naver) or _http_url(original)))
         count += 1
     if not count:
         raise ValueError("변환할 기사 행이 없습니다. 기사 제목과 매체명을 확인해 주세요.")
+    return heading, entries, count
+
+
+def format_workbook(data: bytes, filename: str, report_date: date | None = None):
+    heading, entries, count = _read_report(data, filename, report_date)
+    lines = [heading, "", ""]
+    for title, press, url in entries:
+        if not press:
+            if len(lines) > 3:
+                lines.append("")
+            lines.extend([title, ""])
+        else:
+            lines.extend([f"ㅇ {press}, {title}", url, ""])
     return "\r\n".join(lines).rstrip("\r\n") + "\r\n", count
+
+
+def format_workbook_html(data: bytes, filename: str, report_date: date | None = None):
+    heading, entries, count = _read_report(data, filename, report_date)
+    rows = []
+    section_open = False
+    for title, press, url in entries:
+        if not press:
+            label = title.lstrip("■▪ ").strip()
+            if section_open:
+                rows.append('</section>')
+            rows.append('<section><h2><span aria-hidden="true">▪</span> ' + escape(label) + '</h2>')
+            section_open = True
+            continue
+        body = '<div>○ ' + escape(press) + ', ' + escape(title) + '</div>'
+        if url:
+            link = escape(url, quote=True)
+            body += f'<a href="{link}" target="_blank" rel="noopener noreferrer">{link}</a>'
+        rows.append('<article>' + body + '</article>')
+    if section_open:
+        rows.append('</section>')
+    return ("""<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>중기부 조간 주요 보도</title>
+<style>
+body{margin:0;padding:14px 12px;color:#111;background:#fff;font:15px/1.45 "Malgun Gothic",sans-serif;overflow-wrap:anywhere}
+h1,h2{font-size:inherit;font-weight:700}
+h1{margin:0 0 22px} h2{margin:20px 0 12px}
+article{margin:0 0 14px} a{display:inline-block;color:#1674c4;text-decoration:underline}
+</style></head><body><main>""" +
+            '<h1>' + escape(heading) + '</h1>' + '\n'.join(rows) + '</main></body></html>', count)

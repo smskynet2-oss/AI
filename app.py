@@ -1323,7 +1323,7 @@ elif st.session_state.page == "summary":
                 """
                 <div class="sub-page-container">
                     <h2>🏢 1. 중기부 조간 요약 (맞춤 양식 변환)</h2>
-                    <p>데이터 파일을 업로드하시면 요청하신 보도 양식에 맞춘 TXT 요약본으로 자동 변환해 드립니다.</p>
+                    <p>엑셀 파일을 올려 기사 목록을 만들고, 원문 링크를 클릭할 수 있습니다.</p>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1331,7 +1331,7 @@ elif st.session_state.page == "summary":
 
             from datetime import datetime
             from hashlib import sha256
-            from mss_briefing import KST, format_workbook
+            from mss_briefing import KST, format_workbook_html
 
             with st.container():
                 st.markdown("### 📂 조간 데이터 파일 업로드")
@@ -1346,32 +1346,30 @@ elif st.session_state.page == "summary":
                 if uploaded is not None:
                     data = uploaded.getvalue()
                     stamp = (sha256(data).hexdigest(), uploaded.name, report_day.isoformat())
-                    if st.button("요청 양식으로 TXT 변환", key="run_mss_python", type="primary"):
-                        st.session_state.pop("mss_conversion", None)
+                    if st.button("브리핑 만들기", key="run_mss_python", type="primary"):
+                        st.session_state.pop("mss_link_conversion", None)
                         try:
                             with st.spinner("기사 목록을 변환하고 있습니다…"):
-                                txt, count = format_workbook(data, uploaded.name, report_day)
-                            st.session_state["mss_conversion"] = (stamp, txt, count)
+                                html, count = format_workbook_html(data, uploaded.name, report_day)
+                            st.session_state["mss_link_conversion"] = (stamp, html, count)
                         except Exception as exc:
                             st.error(f"데이터를 처리하는 도중 오류가 발생했습니다: {exc}")
 
-                    result = st.session_state.get("mss_conversion")
+                    result = st.session_state.get("mss_link_conversion")
                     if result and result[0] == stamp:
-                        _, txt, count = result
+                        _, html, count = result
                         st.success(f"{count}건을 변환했습니다.")
-                        st.text_area(
-                            "변환된 텍스트 미리보기", txt, height=350, disabled=True,
-                            key="mss_preview_" + sha256(txt.encode()).hexdigest()[:16],
-                        )
+                        st.markdown("#### 브리핑 미리보기")
+                        components.html(html, height=460, scrolling=True)
                         st.download_button(
-                            "TXT 다운로드",
-                            data=txt.encode("utf-8-sig"),
-                            file_name=f"중기부_조간요약_{report_day:%Y%m%d}.txt",
-                            mime="text/plain; charset=utf-8",
-                            key="download_mss_txt",
+                            "브리핑 HTML 다운로드",
+                            data=html.encode("utf-8"),
+                            file_name=f"중기부_조간브리핑_{report_day:%Y%m%d}.html",
+                            mime="text/html; charset=utf-8",
+                            key="download_mss_html",
                         )
                 else:
-                    st.session_state.pop("mss_conversion", None)
+                    st.session_state.pop("mss_link_conversion", None)
 
         elif current_sum_sub == "mcst":
             st.markdown(
