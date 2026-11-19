@@ -1329,64 +1329,49 @@ elif st.session_state.page == "summary":
                 unsafe_allow_html=True,
             )
 
+            from datetime import datetime
+            from hashlib import sha256
+            from mss_briefing import KST, format_workbook
+
             with st.container():
                 st.markdown("### 📂 조간 데이터 파일 업로드")
-                uploaded_macro_file = st.file_uploader(
-                    "중기부 조간 데이터 파일 (.xlsx, .xls)",
-                    type=["xlsx", "xls"],
-                    key="mss_uploader"
+                uploaded = st.file_uploader(
+                    "중기부 조간 데이터 파일 (.xlsm, .xlsx, .xls)",
+                    type=["xlsm", "xlsx", "xls"],
+                    key="mss_uploader",
                 )
+                report_day = st.date_input(
+                    "보고일", value=datetime.now(KST).date(), key="mss_report_day"
+                )
+                if uploaded is not None:
+                    data = uploaded.getvalue()
+                    stamp = (sha256(data).hexdigest(), uploaded.name, report_day.isoformat())
+                    if st.button("요청 양식으로 TXT 변환", key="run_mss_python", type="primary"):
+                        st.session_state.pop("mss_conversion", None)
+                        try:
+                            with st.spinner("기사 목록을 변환하고 있습니다…"):
+                                txt, count = format_workbook(data, uploaded.name, report_day)
+                            st.session_state["mss_conversion"] = (stamp, txt, count)
+                        except Exception as exc:
+                            st.error(f"데이터를 처리하는 도중 오류가 발생했습니다: {exc}")
 
-                if uploaded_macro_file is not None:
-                    try:
-                        excel_file = pd.ExcelFile(uploaded_macro_file)
-                        sheet_names = excel_file.sheet_names
-                        df_mss = pd.read_excel(uploaded_macro_file, sheet_name=sheet_names[0])
-
-                        st.success(f"데이터 로드 성공! (총 {len(df_mss)}행 감지)")
-
-                        with st.expander("업로드된 데이터 미리보기"):
-                            st.dataframe(df_mss.head())
-
-                        if st.button("🚀 요청 양식으로 TXT 변환", key="run_mss_python", type="primary"):
-                            with st.spinner("요청하신 양식에 맞춰 변환 중..."):
-
-                                cleaned_df = df_mss.dropna(how="all").fillna("")
-
-                                txt_lines = []
-                                txt_lines.append(f"< {today_title()}, 조간 주요 보도 >\n\n")
-                                txt_lines.append("■ 우리부 관련\n\n")
-
-                                for idx, row in cleaned_df.iterrows():
-                                    row_vals = [str(val).strip() for val in row.values if str(val).strip() != ""]
-                                    if len(row_vals) >= 2:
-                                        press = row_vals[0]
-                                        title = row_vals[1]
-                                        link = row_vals[2] if len(row_vals) > 2 else ""
-
-                                        txt_lines.append(f"ㅇ {press}, {title}\n")
-                                        if link:
-                                            txt_lines.append(f"{link}\n\n")
-                                        else:
-                                            txt_lines.append("\n")
-                                    elif len(row_vals) == 1:
-                                        txt_lines.append(f"ㅇ {row_vals[0]}\n\n")
-
-                                text_content = "".join(txt_lines)
-
-                            st.success("양식 변환이 완료되었습니다!")
-                            st.text_area("변환된 텍스트 미리보기", text_content, height=350, key="mss_preview")
-
-                            st.download_button(
-                                label="📥 양식 맞춤 텍스트 파일 다운로드 (.txt)",
-                                data=text_content.encode("utf-8-sig"),
-                                file_name="중기부_조간요약_양식적용.txt",
-                                mime="text/plain",
-                                key="download_mss_txt"
-                            )
-
-                    except Exception as exc:
-                        st.error(f"데이터를 처리하는 도중 오류가 발생했습니다: {exc}")
+                    result = st.session_state.get("mss_conversion")
+                    if result and result[0] == stamp:
+                        _, txt, count = result
+                        st.success(f"{count}건을 변환했습니다.")
+                        st.text_area(
+                            "변환된 텍스트 미리보기", txt, height=350, disabled=True,
+                            key="mss_preview_" + sha256(txt.encode()).hexdigest()[:16],
+                        )
+                        st.download_button(
+                            "TXT 다운로드",
+                            data=txt.encode("utf-8-sig"),
+                            file_name=f"중기부_조간요약_{report_day:%Y%m%d}.txt",
+                            mime="text/plain; charset=utf-8",
+                            key="download_mss_txt",
+                        )
+                else:
+                    st.session_state.pop("mss_conversion", None)
 
         elif current_sum_sub == "mcst":
             st.markdown(
