@@ -118,7 +118,7 @@ def _render_txt(heading, entries):
                 lines.append("")
             lines.extend(["■ " + _section_label(title), ""])
         else:
-            lines.extend([f"○ {press}, {title}", url, ""])
+            lines.extend([f"ㅇ {press}, {title}", url, ""])
     return "\r\n".join(lines).rstrip("\r\n") + "\r\n"
 
 
@@ -133,7 +133,7 @@ def _render_html(heading, entries):
             rows.append('<section><h2><span aria-hidden="true">■</span> ' + escape(label) + '</h2>')
             section_open = True
             continue
-        body = '<div>○ ' + escape(press) + ', ' + escape(title) + '</div>'
+        body = '<div>ㅇ ' + escape(press) + ', ' + escape(title) + '</div>'
         if url:
             link = escape(url, quote=True)
             body += f'<a href="{link}" target="_blank" rel="noopener noreferrer">{link}</a>'
