@@ -106,29 +106,31 @@ def _read_report(data: bytes, filename: str, report_date: date | None = None):
     return heading, entries, count
 
 
-def format_workbook(data: bytes, filename: str, report_date: date | None = None):
-    heading, entries, count = _read_report(data, filename, report_date)
+def _section_label(title):
+    return title.lstrip("■▪ ").strip()
+
+
+def _render_txt(heading, entries):
     lines = [heading, "", ""]
     for title, press, url in entries:
         if not press:
             if len(lines) > 3:
                 lines.append("")
-            lines.extend([title, ""])
+            lines.extend(["■ " + _section_label(title), ""])
         else:
-            lines.extend([f"ㅇ {press}, {title}", url, ""])
-    return "\r\n".join(lines).rstrip("\r\n") + "\r\n", count
+            lines.extend([f"○ {press}, {title}", url, ""])
+    return "\r\n".join(lines).rstrip("\r\n") + "\r\n"
 
 
-def format_workbook_html(data: bytes, filename: str, report_date: date | None = None):
-    heading, entries, count = _read_report(data, filename, report_date)
+def _render_html(heading, entries):
     rows = []
     section_open = False
     for title, press, url in entries:
         if not press:
-            label = title.lstrip("■▪ ").strip()
+            label = _section_label(title)
             if section_open:
                 rows.append('</section>')
-            rows.append('<section><h2><span aria-hidden="true">▪</span> ' + escape(label) + '</h2>')
+            rows.append('<section><h2><span aria-hidden="true">■</span> ' + escape(label) + '</h2>')
             section_open = True
             continue
         body = '<div>○ ' + escape(press) + ', ' + escape(title) + '</div>'
@@ -148,4 +150,20 @@ h1,h2{font-size:inherit;font-weight:700}
 h1{margin:0 0 22px} h2{margin:20px 0 12px}
 article{margin:0 0 14px} a{display:inline-block;color:#1674c4;text-decoration:underline}
 </style></head><body><main>""" +
-            '<h1>' + escape(heading) + '</h1>' + '\n'.join(rows) + '</main></body></html>', count)
+            '<h1>' + escape(heading) + '</h1>' + '\n'.join(rows) + '</main></body></html>')
+
+
+def format_workbook(data: bytes, filename: str, report_date: date | None = None):
+    heading, entries, count = _read_report(data, filename, report_date)
+    return _render_txt(heading, entries), count
+
+
+def format_workbook_html(data: bytes, filename: str, report_date: date | None = None):
+    heading, entries, count = _read_report(data, filename, report_date)
+    return _render_html(heading, entries), count
+
+
+def format_workbook_download(data: bytes, filename: str, report_date: date | None = None):
+    heading, entries, count = _read_report(data, filename, report_date)
+    return _render_html(heading, entries), _render_txt(heading, entries), count
+
